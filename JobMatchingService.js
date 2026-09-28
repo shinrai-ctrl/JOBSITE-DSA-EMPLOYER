@@ -6,7 +6,7 @@ const { mergeSort } = require('./Sorting')
 
 // Loads every job with its list of required skill names attached.
 function getAllJobsWithSkills() {
-    const jobs = db.prepare("SELECT * FROM jobs WHERE status = 'active' OR status IS NULL").all();
+    const jobs = db.prepare('SELECT * FROM jobs').all();
     const skillStmt = db.prepare(`
         SELECT s.name FROM job_skills js
         JOIN skills s ON s.id = js.skill_id
@@ -21,7 +21,8 @@ function getAllJobsWithSkills() {
             requiredSkills: skillStmt.all(job.id).map((r) => r.name),
         };
 
-        const key = [
+        // Preserve legacy seed deduplication, but every employer posting has its own identity.
+        const key = (job.employer_id || job.employer_account_id) ? `employer-job:${job.id}` : [
             job.title,
             job.company,
             job.location,

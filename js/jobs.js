@@ -45,7 +45,7 @@ export function initJobs() {
     function money(job) {
 
         return job.salary
-            ? `<span>${job.salary}</span>`
+            ? `<span>${escapeHtml(job.salary)}</span>`
             : '';
     }
 
@@ -194,13 +194,13 @@ export function initJobs() {
                         ${savedJobIds.has(Number(job.id)) ? 'Saved' : 'Save job'}
                     </button>
 
-                    <h3>${job.title}</h3>
+                    <h3>${escapeHtml(job.title)}</h3>
 
-                    <p class="company">${job.company || ''}</p>
+                    <p class="company">${escapeHtml(job.company || '')}</p>
 
                     <div class="meta">
-                        <span>${job.location || 'Remote'}</span>
-                        ${job.employment_type ? `<span>${job.employment_type}</span>` : ''}
+                        <span>${escapeHtml(job.location || 'Remote')}</span>
+                        ${job.employment_type ? `<span>${escapeHtml(job.employment_type)}</span>` : ''}
                         ${money(job)}
                     </div>
 
@@ -240,7 +240,7 @@ export function initJobs() {
         const seen = new Set();
 
         return jobs.filter((job) => {
-            const key = [
+            const key = (job.employer_id || job.employer_account_id) ? `employer-job:${job.id}` : [
                 job.title,
                 job.company,
                 job.location,
@@ -508,21 +508,7 @@ export function initJobs() {
                             <p id="jobDetailsDescription"></p>
                         </div>
 
-                        <div class="job-details-section" id="jobResponsibilitiesSection">
-                            <h3>Responsibilities</h3>
-                            <p id="jobDetailsResponsibilities"></p>
-                        </div>
-
-                        <div class="job-details-section" id="jobQualificationsSection">
-                            <h3>Qualifications</h3>
-                            <p id="jobDetailsQualifications"></p>
-                        </div>
-
-                        <div class="job-details-section" id="jobBenefitsSection">
-                            <h3>Benefits</h3>
-                            <p id="jobDetailsBenefits"></p>
-                        </div>
-
+                        <div id="jobPostingDetails"></div>
                         <div class="job-details-skills">
                             <div class="job-details-section">
                                 <h3>You have</h3>
@@ -549,10 +535,6 @@ export function initJobs() {
                             <span class="company-panel-label">Your resume</span>
                             <strong id="jobResumeStatus">No resume uploaded yet.</strong>
                             <p>Upload your resume here. It will be saved to your profile for future applications.</p>
-                            <div class="job-details-section job-details-application-info">
-                                <h3>How to apply</h3>
-                                <p id="jobDetailsHowToApply"></p>
-                            </div>
 
                             <input
                                 type="file"
@@ -622,10 +604,7 @@ export function initJobs() {
         document.querySelector('#jobDetailsMeta').innerHTML = '';
         document.querySelector('#jobDetailsMatch').innerHTML = '';
         document.querySelector('#jobDetailsDescription').textContent = 'Loading details...';
-        document.querySelector('#jobDetailsResponsibilities').textContent = '';
-        document.querySelector('#jobDetailsQualifications').textContent = '';
-        document.querySelector('#jobDetailsBenefits').textContent = '';
-        document.querySelector('#jobDetailsHowToApply').textContent = '';
+        document.querySelector('#jobPostingDetails').replaceChildren();
         document.querySelector('#jobDetailsHave').innerHTML = '';
         document.querySelector('#jobDetailsMissing').innerHTML = '';
         document.querySelector('#jobCompanyName').textContent = '';
@@ -675,20 +654,25 @@ export function initJobs() {
             document.querySelector('#jobDetailsDescription').textContent =
                 job.description || 'No job description provided yet.';
 
-            const detailSections = [
-                ['jobResponsibilitiesSection', 'jobDetailsResponsibilities', job.responsibilities],
-                ['jobQualificationsSection', 'jobDetailsQualifications', job.qualifications],
-                ['jobBenefitsSection', 'jobDetailsBenefits', job.benefits]
-            ];
-
-            detailSections.forEach(([sectionId, textId, value]) => {
-                const section = document.querySelector('#' + sectionId);
-                document.querySelector('#' + textId).textContent = value || '';
-                section.hidden = !value;
-            });
-
-            document.querySelector('#jobDetailsHowToApply').textContent =
-                job.how_to_apply || 'Apply through JobPath using the button below.';
+            const postingDetails = document.querySelector('#jobPostingDetails');
+            const postingFields = {
+                responsibilities: 'Responsibilities', qualifications: 'Qualifications / requirements',
+                work_schedule: 'Work schedule', benefits: 'Benefits', application_requirements: 'Application requirements',
+                application_deadline: 'Application deadline', how_to_apply: 'How to apply', contact_information: 'Contact information',
+            };
+            for (const [key, label] of Object.entries(postingFields)) {
+                if (!job[key]) continue;
+                const section = document.createElement('section');
+                section.className = 'job-details-section';
+                const heading = document.createElement('h3');
+                heading.textContent = label;
+                const paragraph = document.createElement('p');
+                paragraph.textContent = job[key];
+                paragraph.style.whiteSpace = 'pre-wrap';
+                paragraph.style.overflowWrap = 'anywhere';
+                section.append(heading, paragraph);
+                postingDetails.append(section);
+            }
 
             const company = data.company || {};
 
@@ -871,52 +855,18 @@ export function initJobs() {
             const applyButton =
                 document.querySelector('#jobApplyButton');
 
-            applyButton.onclick = async () => {
-                try {
-                    const response = await fetch(
-                        `/api/jobs/${encodeURIComponent(job.id)}/apply`,
-                        {
-                            method: 'POST',
-                            credentials: 'include'
-                        }
-                    );
-
-                    const result = await response.json();
-
-                    if (response.status === 401) {
-                        window.dispatchEvent(
-                            new CustomEvent('jobpath:open-auth', {
-                                detail: { mode: 'login' }
-                            })
-                        );
-                        return;
-                    }
-
-                    if (!response.ok) {
-                        throw new Error(
-                            result.error || 'Failed to submit application.'
-                        );
-                    }
-
-                    applyButton.textContent = 'Application Sent';
-                    applyButton.disabled = true;
-                    applyButton.classList.add('is-applied');
-
-                    const resumeNote = result.resumeAttached
-                        ? ' Your saved resume was attached.'
-                        : ' No resume was attached yet.';
-
-                    document.querySelector('#jobDetailsMatch').innerHTML +=
-                        `<span>Application submitted.${escapeHtml(resumeNote)}</span>`;
-                } catch (error) {
-                    if (error.message === 'You already applied to this job.') {
-                        applyButton.textContent = 'Already Applied';
-                        applyButton.disabled = true;
-                        return;
-                    }
-
-                    alert(error.message || 'Failed to submit application.');
+            applyButton.textContent = job.how_to_apply ? 'View application instructions' : 'Apply Now';
+            applyButton.onclick = () => {
+                if (job.how_to_apply) {
+                    postingDetails.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    return;
                 }
+                if (job.apply_url) {
+                    window.open(job.apply_url, '_blank', 'noopener,noreferrer');
+                    return;
+                }
+
+                alert('Application link is not configured for this job yet.');
             };
 
         } catch (error) {
